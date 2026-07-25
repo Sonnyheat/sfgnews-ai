@@ -7,12 +7,12 @@ interface PillarFilterProps {
 
 export default function PillarFilter({ active, onChange }: PillarFilterProps) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-3">
       {PILLAR_FILTERS.map(({ value, label }) => (
         <button
           key={label}
           onClick={() => onChange(value)}
-          className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+          className={`inline-flex min-h-[48px] items-center justify-center rounded-full px-5 py-2 text-sm font-medium transition-colors ${
             active === value
               ? 'bg-blue-700 text-white'
               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'

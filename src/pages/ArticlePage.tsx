@@ -44,17 +44,24 @@ export default function ArticlePage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
-      <nav className="mb-6 flex items-center gap-2 text-sm text-gray-500">
-        <Link to="/en" className="hover:text-blue-700 transition-colors">Home</Link>
-        <span>/</span>
+      <nav className="mb-6 flex flex-wrap items-center gap-x-2 text-sm text-gray-500">
+        <Link
+          to="/en"
+          className="inline-flex min-h-[44px] items-center py-2 hover:text-blue-700 transition-colors"
+        >
+          Home
+        </Link>
+        <span aria-hidden="true">/</span>
         <Link
           to={`/en?pillar=${pillarSlug}`}
-          className="hover:text-blue-700 transition-colors"
+          className="inline-flex min-h-[44px] items-center py-2 hover:text-blue-700 transition-colors"
         >
           {pillarLabel}
         </Link>
-        <span>/</span>
-        <span className="truncate text-gray-700">{article.headline}</span>
+        <span aria-hidden="true">/</span>
+        <span className="inline-flex min-h-[44px] items-center truncate text-gray-700">
+          {article.headline}
+        </span>
       </nav>
 
       <div className="mb-4">
