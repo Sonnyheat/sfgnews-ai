@@ -136,10 +136,12 @@ insurance compliance:
 - Streaming primary response while reviewer/SHIELD runs async is possible for L2
   **[needs source]** — but a regulated response is not *released* until SHIELD passes.
 
-**Open question for you:** if "speed supersedes" is meant to allow releasing
-regulated insurance answers before SHIELD, that conflicts with the compliance
-rules and the "News rules can't weaken insurance rules" instruction. Default: speed
-optimizations never skip the insurance SHIELD gate. Confirm if you want otherwise.
+**CONFIRMED RULE (Jeff, 2026-07-26):** speed optimizations (fast single-model L1,
+streaming, async review) are permitted, **but a regulated / customer-facing
+insurance response is never released before SHIELD passes.** SFG News editorial
+speed never overrides SFG insurance compliance. This is a hard invariant: no
+policy, flag, or latency budget may release regulated insurance content ahead of
+the SHIELD gate.
 
 ## 9. Component map (reference module → real router)
 
