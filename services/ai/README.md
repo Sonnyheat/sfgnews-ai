@@ -4,11 +4,19 @@ A provider-independent AI routing layer that lets **Claude and OpenAI work
 together** on Sunny Financial Group decisions while preserving existing systems,
 SHIELD compliance, agent behavior, and production stability.
 
-> **Status: staged for review — not deployed.** This module is self-contained
-> and fully tested. It is written to drop into the `sunnyfinancial-supabase`
-> repo (the REBUILD project's edge functions / the n8n `alex-response` path).
-> Nothing here reads or hardcodes secrets, and nothing is wired to production
-> until explicitly approved.
+> **Status: DESIGN REFERENCE ONLY — not a production router.**
+> A shared production router already exists: **`Sonnyheat/sunny-model-router`**
+> (Railway, project `grateful-prosperity`), already serving Anthropic + OpenAI
+> (+ Perplexity/Qwen/xAI) across all Sunny apps (SFGNEWS, ALEX, MASON, DOM,
+> LEDGER, CORE) and logging to the Holdings `model_router_logs` table.
+>
+> This module must **not** be wired into sfgnews.ai as a second router — that
+> would create the exact duplicate the multi-app brief warns against. It is kept
+> as a **tested reference / spec** for the Phase-2 additions (decision levels,
+> dual-model comparison, SHIELD gating, structured-output validation). The real
+> implementation belongs in `Sonnyheat/sunny-model-router`. See
+> `PHASE2_DESIGN.md` for how each component maps onto the existing service.
+> Nothing here reads or hardcodes secrets.
 
 ## Why this lives here (and where it belongs)
 
