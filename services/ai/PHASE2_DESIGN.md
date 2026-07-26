@@ -12,9 +12,10 @@ compliance.
 > this repo** (the `sfg_news` publish target — see §1a). The §8 latency-vs-SHIELD
 > invariant is confirmed (2026-07-26). **Router internals are now grounded too**
 > — `Sonnyheat/sunny-model-router` was read directly (§10b), closing every
-> **[needs source]** flag. That read also surfaced a **blocking architectural
-> decision** (single- vs cross-provider multi-model; §10b/§11) created by the
-> 2026-07-26 Claude consolidation — the dual-model build (§6) waits on Jeff's call.
+> **[needs source]** flag. Jeff chose **cross-provider** (OpenAI reviewer, L3/L4;
+> §11), and the engine is now **BUILT and staged** on branch
+> `sunny-model-router@claude/phase2-decision-engine` — additive, tested (26/26),
+> **not deployed** (see §12). Awaiting approval to migrate + enable a rollout.
 
 ---
 
@@ -213,17 +214,19 @@ the SHIELD gate.
 > **Confirmed (§10b): the real router is Python/LiteLLM.** Each row below is a
 > **Python rewrite inside `router_app.py`** (or a new sibling module), not a port
 > of the TypeScript reference. The TS module stays a spec + test oracle.
+> **✅ BUILT (§12)** on branch `sunny-model-router@claude/phase2-decision-engine`.
 
-| Reference (`services/ai/…`) | Lands in `sunny-model-router` as |
+| Reference (`services/ai/…`) | Implemented in `sunny-model-router` as |
 |---|---|
-| `classification/` (deterministic + rules) | pre-routing classifier module |
-| `policies/policy.ts` | `routing_policies` loader + execution-plan resolver |
-| `providers/*` + `registry` + `circuitBreaker` | extend existing provider layer with breakers/health |
-| `comparison/compare.ts` | new L3 comparison step |
-| `compliance/shield.ts` (interface) | thin client over existing `shield_prompts`/`shield_flags` |
-| `schema/validate.ts` | server-side `DecisionOutput` validation |
-| `router/costLedger.ts` | per-request/session caps on top of existing cost logging |
-| `logging/logger.ts` + `persistence/schema.sql` | column adds to `model_router_logs` + 3 small tables |
+| `classification/` (deterministic + rules) | `phase2/classifier.py` + `phase2/rules.py` (adds sfg_news app-scoped rules) |
+| `policies/policy.ts` | `phase2/policy.py` — `routing_policies` overlay + execution-plan resolver |
+| `providers/*` + `registry` + `circuitBreaker` | `phase2/breaker.py` (registry + breakers) + `phase2/providers.py` (LiteLLM adapter) |
+| `comparison/compare.ts` | `phase2/comparison.py` — L3 comparison step |
+| `compliance/shield.ts` (interface) | `phase2/shield.py` — reviewer interface + `RuleBasedShield` fallback; n8n client TODO |
+| `schema/validate.ts` | `phase2/validate.py` — server-side `DecisionOutput` validation |
+| `router/costLedger.ts` | `phase2/costledger.py` — per-request/session caps + hard call/loop cap |
+| `logging/logger.ts` + `persistence/schema.sql` | `phase2/engine.py` (redacted audit row) + `supabase/migrations/0002_phase2_decision_tables.sql` |
+| `router/index.ts` (orchestrator) | `phase2/engine.py` — `execute()` + `/ai-decision` endpoint in `router_app.py` |
 
 ## 10. Rollout (matches your order)
 
@@ -371,5 +374,50 @@ routing stay Claude-only and byte-for-byte unchanged.
 the decision-level policy layer (§4), `routing_policies` loader, `CostLedger` +
 loop cap, `human_approvals`, `DecisionOutput` validation, and the §7 migration all
 hold regardless of the §6 choice. Only the dual-model comparison step (§6) is
-gated on the decision above. **Nothing is implemented, migrated, or deployed yet**,
-and the reference module stays reference-only (not wired into any app).
+gated on the decision above.
+
+## 12. Implementation status — BUILT, staged, NOT deployed
+
+Built in `Sonnyheat/sunny-model-router` on branch
+**`claude/phase2-decision-engine`** (no PR, not merged, not deployed). Additive
+only: the Phase-1 `/ai-router` path is byte-for-byte unchanged.
+
+**What landed:**
+
+- **`phase2/` package** — a faithful Python port of the tested TS reference,
+  adapted to FastAPI + LiteLLM: classifier (+ sfg_news app-scoped rules), policy
+  resolver, engine (4 levels; `claude_only` / `primary_review` / `parallel`),
+  deterministic comparison, `DecisionOutput` validation with safe recovery,
+  cost + hard call/loop caps, circuit breakers, `RuleBasedShield` fallback,
+  redacted audit row.
+- **Cross-provider reviewer (Jeff's decision)** — new `decision_reviewer` alias
+  (`openai/gpt-4.1`) in `litellm_config.yaml`, kept in sync with
+  `VALID_ALIASES`, **no fallback** so a reviewer outage degrades to single-model
+  + escalation rather than silently reviewing with Claude. Drafting/agent
+  routing stay Claude-only.
+- **Opt-in endpoints** — `POST /ai-decision` and `GET /health/phase2`, gated by
+  `PHASE2_ENABLED_APPS`. An app not in that set makes **no** model call and
+  points callers back to `/ai-router` (the safe "flag off" state).
+- **Migration** — `supabase/migrations/0002_phase2_decision_tables.sql`:
+  reuse-and-extend per §7 (column adds to `model_router_logs` +
+  `decision_records` / `decision_evidence` / `routing_policies` /
+  `human_approvals`), RLS on. **Targets Holdings `gukpllhyjatgiuyurdzq`** — the
+  project the live router actually logs to (reconciles the reference
+  `schema.sql`, which had named REBUILD). **Not applied.**
+- **Tests** — 26 stdlib `unittest` cases (no network/deps), all passing:
+  `python -m unittest discover -s tests -t .`.
+
+**Explicitly NOT done (needs Jeff / ops):**
+
+- Apply migration `0002` (add RLS policies first).
+- Wire a Supabase-backed decision logger + human-approval-queue adapter
+  (interfaces exist in `phase2/engine.py`; default is a no-op logger + in-memory
+  queue).
+- Wire `phase2/shield.py` to the real SHIELD **n8n** workflow (today it uses the
+  deterministic `RuleBasedShield` floor).
+- Provision `OPENAI_API_KEY` for the reviewer; set `PHASE2_ENABLED_APPS` to begin
+  the §10 staged rollout (SFG L1–L2 first).
+- The `sfg_news` `publish_status` ladder + writer (§5) — still pending Jeff.
+
+**Nothing is deployed.** Rollback remains trivial: agents stay on `/ai-router`;
+`/ai-decision` is off for every app until `PHASE2_ENABLED_APPS` is set.
