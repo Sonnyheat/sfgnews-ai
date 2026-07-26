@@ -167,6 +167,53 @@ optimizations never skip the insurance SHIELD gate. Confirm if you want otherwis
 `routing_policies`; setting it off reverts that app/level to current alias routing
 with zero code change. Each app is independent (separate keys, separate flags).
 
+## 10a. Observed facts (resolves several [needs source] items from live data)
+
+Mined from Holdings `model_router_logs` and `shield_prompts` — no source code needed.
+
+**Actual `model_alias → provider/model` routing (from ~9,940 calls):**
+
+| Alias | Primary model (observed) | Role | Notes |
+|---|---|---|---|
+| `content_draft` | **anthropic / claude-sonnet-4-6** (9,116) | long-form drafting | Claude is primary drafter ✅ matches spec |
+| `content_review` | **openai / gpt-4o** (104) | second-opinion review | OpenAI reviews ✅ |
+| `technical_reasoning` | **openai / gpt-4o-mini** (329) | structured reasoning | OpenAI for logic ✅ |
+| `compliance_review` | **openai / gpt-4o** (83) + claude-sonnet-5 (2) | SHIELD scan model | |
+| `voice_intake` | openai / gpt-4o (+mini, +gpt-4.1-mini) | Mason voice sessions | |
+| `regulated_public` | gpt-4o-mini (7) + claude-sonnet-5 (3) | regulated public content | |
+| `fallback_safe` | openai / gpt-4o (1) | fallback path | confirms fallback exists |
+
+Implication: the spec's Claude-drafts/OpenAI-reviews split **already exists** as
+separate alias calls (`content_draft` then `content_review`). Phase-2's
+`primary_review` mode just formalizes that pair into one `execute()` with a
+comparison + single final response — it is not new behavior, it's consolidation.
+
+> Note: live models are newer than the reference module's placeholders. Real IDs:
+> `claude-sonnet-4-6`, `claude-sonnet-5`, `gpt-4o-2024-08-06`, `gpt-4o-mini`,
+> `gpt-4.1-mini`. Update `config.ts` model IDs to match when porting.
+
+**Actual SHIELD architecture:**
+
+- SHIELD runs as an **n8n workflow** `O6eGqdvHtlKfr3AS` ("SUNNY — SHIELD Compliance
+  Scan"), invoked via the `compliance_review` alias / `shield` agent.
+- It composes its prompt from `shield_prompts`: shared **`core_rules`** (v2,
+  federal compliance — "F1: no misleading statements… F2: no investment/profit/
+  savings-plan language…") + a **verdict/output wrapper** (`general_gate_output`
+  v4 with an "ALEX VERDICT LAYER": GREEN/… verdicts, disclaimer, JSON format,
+  routing) + per-consumer scope wrappers (`mason_script_output` for call scripts,
+  `reel_clip_output` for short video).
+- So SHIELD is **already the shared, multi-app gate** with shared core + per-app
+  wrappers. Phase-2 maps PASS/REQUIRE_REVISION/ESCALATE/BLOCK onto its existing
+  GREEN/YELLOW/RED-style verdict layer rather than inventing a new gate.
+- `compliance/shield.ts` in the reference module should therefore be a **thin
+  client that calls this n8n workflow** (and honors its verdict), not a
+  reimplementation. The deterministic `RuleBasedShield` stays only as an offline
+  safe-fallback for tests/degraded mode.
+
+**Still genuinely needs the router source** (`Sonnyheat/sunny-model-router`):
+the deterministic pre-classifier (if any), the alias-selection logic, retry/
+breaker/timeout internals, and how `requires_human_review`/`escalation` are set.
+
 ## 11. To finalize this design I need
 
 - Read access to **`Sonnyheat/sunny-model-router`** (resolves every **[needs source]**:
