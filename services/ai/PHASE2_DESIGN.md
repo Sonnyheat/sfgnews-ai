@@ -352,15 +352,17 @@ classifier is the deterministic `choose_alias` (no LLM classify), breakers/cost
 caps/loop caps are net-new, SHIELD is external n8n (not called in-router), and the
 contract is snake_case with no `application`/`DecisionOutput`.
 
-**Blocking decision — needs Jeff before §6 can be built:** cross-provider vs.
-single-provider multi-model (the three options in §10b). This is the pivot the
-2026-07-26 Claude consolidation created; the whole dual-model build depends on it.
+**DECISION (Jeff, 2026-07-26): Option 1 — cross-provider.** OpenAI returns as an
+**L3/L4 reviewer only** (drafting stays Claude). This is an **explicit override**,
+by Jeff, of the 2026-07-26 single-provider consolidation and the router repo's
+"Claude only" stack note — scoped to the review/comparison leg, not a broad
+re-add of OpenAI to agent-facing aliases. Recorded so the two documents agree:
+the stack doc should be updated to permit OpenAI as a compliance/second-opinion
+*reviewer*. Drafting/L1/L2-primary remain `claude-sonnet-5`.
 
-- **Option 1** — cross-provider (OpenAI reviewer on L3/L4 only).
-- **Option 2** — single-provider dual-role (two independent Claude passes). *Most
-  consistent with the 2026-07-26 directive + the "Claude only" stack rule.*
-- **Option 3** — Claude + a provisioned test alias (perplexity/grok) for the
-  review/fact-check leg only.
+Build consequence: add an OpenAI-backed **reviewer** deployment used only by the
+decision engine's review/parallel legs; `choose_alias` and all Phase-1 agent
+routing stay Claude-only and byte-for-byte unchanged.
 
 **Also needs Jeff (unchanged):** approval of the §7 data-model migration, and the
 `publish_status` ladder + writer for `sfg_news` (§5).
