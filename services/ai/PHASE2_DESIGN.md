@@ -10,9 +10,11 @@ compliance.
 > (a) the router's **observable** contract (log schema, routing aliases, provider
 > set, SHIELD tables, Railway config) and (b) the **actual `sfgnews-ai` code in
 > this repo** (the `sfg_news` publish target — see §1a). The §8 latency-vs-SHIELD
-> invariant is confirmed (2026-07-26). Router-*internal* items still need the
-> `Sonnyheat/sunny-model-router` source and stay flagged **[needs source]**;
-> that repo is **not** in this session's scope, so those cannot be closed here.
+> invariant is confirmed (2026-07-26). **Router internals are now grounded too**
+> — `Sonnyheat/sunny-model-router` was read directly (§10b), closing every
+> **[needs source]** flag. That read also surfaced a **blocking architectural
+> decision** (single- vs cross-provider multi-model; §10b/§11) created by the
+> 2026-07-26 Claude consolidation — the dual-model build (§6) waits on Jeff's call.
 
 ---
 
@@ -154,6 +156,11 @@ renders under FL License W725473 (§1a), so the floor is not optional for news.
 
 ## 6. Dual-model comparison (L3+)
 
+> ⚠️ The "Claude **and OpenAI**" wording below predates the 2026-07-26
+> single-provider consolidation — see the blocking tension in §10b, decision
+> pending in §11. If Jeff picks single-provider (option 2), read "OpenAI" here as
+> "a second, independently-prompted Claude reviewer."
+
 Run Claude and OpenAI **independently** (neither sees the other's draft), then a
 deterministic comparison (reference: `comparison/compare.ts`) → agreement status,
 material differences, unique risks, evidence gaps. Agreement **never** auto-releases;
@@ -202,6 +209,10 @@ policy, flag, or latency budget may release regulated insurance content ahead of
 the SHIELD gate.
 
 ## 9. Component map (reference module → real router)
+
+> **Confirmed (§10b): the real router is Python/LiteLLM.** Each row below is a
+> **Python rewrite inside `router_app.py`** (or a new sibling module), not a port
+> of the TypeScript reference. The TS module stays a spec + test oracle.
 
 | Reference (`services/ai/…`) | Lands in `sunny-model-router` as |
 |---|---|
@@ -274,6 +285,50 @@ comparison + single final response — it is not new behavior, it's consolidatio
 the deterministic pre-classifier (if any), the alias-selection logic, retry/
 breaker/timeout internals, and how `requires_human_review`/`escalation` are set.
 
+## 10b. Router source confirmed — Python/LiteLLM (closes the [needs source] items)
+
+Read directly from `Sonnyheat/sunny-model-router` @ `main` (now in session scope).
+The production router is **Python + FastAPI + LiteLLM** — **not** TypeScript. The
+`services/ai/` module in this repo is therefore a **spec/reference, not portable
+code**; every §9 mapping is a **Python rewrite of `router_app.py`**, not a drop-in.
+
+| Prior [needs source] | Resolved fact (real code) |
+|---|---|
+| Deterministic pre-classifier | `choose_alias(agent, task_type, risk_level)` — purely deterministic: `task_type`-as-alias passthrough → `risk_level` map (`compliance/legal/underwriting/tax/high → compliance_review`; `regulated/public_financial → regulated_public`) → `AGENT_DEFAULT_ALIAS` → `fallback_safe`. **No LLM classifier exists today**, so the "rules before any LLM classify" floor is already met by default. |
+| alias → model map | `litellm_config.yaml`. **As of 2026-07-26 every agent-facing alias resolves to `anthropic/claude-sonnet-5` (single provider).** OpenAI/Qwen were removed from the production path; only standalone TEST aliases (`grok_test`=xai grok-4.1-fast, `gpt41_mini_test`=openai gpt-4.1-mini, `perplexity_test`=perplexity sonar-pro) point elsewhere, wired to no agent. |
+| retry / breaker / timeout | LiteLLM `num_retries: 2` + declarative `fallbacks` chains + `routing_strategy: simple-shuffle`. **No circuit breaker, no per-request/session cost cap, no loop cap** — genuinely net-new (§9 breaker/costLedger). A 60s provider-health cache + `/health/providers`, `/health/aliases`, `/test-alias` already exist. |
+| SHIELD call shape | **The router does NOT call SHIELD.** SHIELD runs as a separate **n8n direct-Anthropic (claude-sonnet-5)** call — `/ai-router` does not forward a caller system prompt (`RouterRequest` has no such field), so SHIELD's ruleset can't be applied in-router. Putting a SHIELD gate *inside* the router is new architecture (forward a system prompt, or call the n8n workflow), not just "formalizing verdict states." |
+| `requires_human_review` / `escalation` | `assess(agent, risk_level, alias, risk_flags)` — deterministic; **`escalation` is set equal to `requires_human_review`**. Triggers: risk_level ∈ regulated/compliance/high/legal/underwriting/tax, or `agent==alex`, or alias ∈ {regulated_public, compliance_review}, or any risk_flag ∈ {health, underwriting, tax, legal}. `risk_flags` from a keyword scan (`scan_risk_flags`). |
+| logs table | `model_router_logs` migration confirmed (matches §1); RLS on, service-role writes; Supabase project `gukpllhyjatgiuyurdzq` (Sunny Fin Holdings). §7's "add columns" is a Postgres migration on this table. |
+
+**Real contract:** `POST /ai-router` takes snake_case `{agent, task_type, risk_level,
+user_message, context{}}` — **no `application` field, no `outputSchema`, no
+structured `DecisionOutput`**. Response is one snake_case object (`model_alias,
+provider, response, risk_flags, confidence, requires_human_review,
+recommended_next_action, estimated_cost_usd, latency_ms`). §3's camelCase target is
+aspirational; to stay backward-compatible, Phase-2 fields must be **added alongside**
+the existing snake_case ones.
+
+### ⚠️ Blocking design tension — resolve before building §6 (dual-model)
+
+The design's core is **cross-provider** dual-model ("Claude drafts, OpenAI
+reviews"; run both independently). But on **2026-07-26 Jeff consolidated every
+agent-facing alias to a single provider (`claude-sonnet-5`)**, and the router
+repo's own stack note records the rule *"Claude only; NEVER use OpenAI for agent
+intelligence"* (OpenAI allowed only for REEL TTS). Building cross-provider
+comparison would re-introduce exactly what was just removed. Three reconciliations
+— **needs Jeff's call** (§11):
+
+1. **Cross-provider (as originally specced):** re-enable OpenAI as an L3/L4
+   *reviewer only*. Maximum independence; contradicts the 2026-07-26 directive.
+2. **Single-provider, dual-role (honors consolidation):** two **independent
+   Claude** passes — drafter + separately-prompted reviewer/critic — compared
+   deterministically. Claude-only; independence is prompt/role-level, not vendor.
+3. **Claude + a provisioned test alias for the review leg only:** e.g.
+   `perplexity_test` (web-grounded) to fact-check `sfg_news` claims, or
+   `grok_test` as an independent second opinion — reuses already-approved test
+   providers without broadly re-adding OpenAI.
+
 ## 11. Finalization status
 
 **Resolved in this pass (grounded against `sfgnews-ai` code):**
@@ -291,15 +346,28 @@ breaker/timeout internals, and how `requires_human_review`/`escalation` are set.
 - Approval of the reuse-and-extend data model (§7) before any migration.
 - Confirmation of the proposed `publish_status` ladder and who may write it (§5).
 
-**Still blocked on repo access — cannot be closed in this session** (scope is
-`Sonnyheat/sfgnews-ai` only; `Sonnyheat/sunny-model-router` is not attached):
+**Now resolved — `sunny-model-router` read (§10b):** every router **[needs
+source]** flag is closed. Confirmed the router is **Python/LiteLLM**, the
+classifier is the deterministic `choose_alias` (no LLM classify), breakers/cost
+caps/loop caps are net-new, SHIELD is external n8n (not called in-router), and the
+contract is snake_case with no `application`/`DecisionOutput`.
 
-- Router **[needs source]** items: the deterministic pre-classifier, alias→model
-  selection logic, retry/breaker/timeout internals, exact SHIELD (n8n) call
-  shape, and how `requires_human_review` / `escalation` are currently set.
-- Grant read access to `Sonnyheat/sunny-model-router` (or add it to a session)
-  to close the remaining **[needs source]** flags.
+**Blocking decision — needs Jeff before §6 can be built:** cross-provider vs.
+single-provider multi-model (the three options in §10b). This is the pivot the
+2026-07-26 Claude consolidation created; the whole dual-model build depends on it.
 
-**Not started (correctly) — awaiting approval:** no implementation, no migration,
-no deploy, and the reference module in this folder stays reference-only and is
-**not** wired into the app.
+- **Option 1** — cross-provider (OpenAI reviewer on L3/L4 only).
+- **Option 2** — single-provider dual-role (two independent Claude passes). *Most
+  consistent with the 2026-07-26 directive + the "Claude only" stack rule.*
+- **Option 3** — Claude + a provisioned test alias (perplexity/grok) for the
+  review/fact-check leg only.
+
+**Also needs Jeff (unchanged):** approval of the §7 data-model migration, and the
+`publish_status` ladder + writer for `sfg_news` (§5).
+
+**Build readiness:** decision-*independent* slices can start as soon as approved —
+the decision-level policy layer (§4), `routing_policies` loader, `CostLedger` +
+loop cap, `human_approvals`, `DecisionOutput` validation, and the §7 migration all
+hold regardless of the §6 choice. Only the dual-model comparison step (§6) is
+gated on the decision above. **Nothing is implemented, migrated, or deployed yet**,
+and the reference module stays reference-only (not wired into any app).
