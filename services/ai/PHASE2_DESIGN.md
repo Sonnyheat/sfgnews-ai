@@ -5,10 +5,14 @@ comparison, per-application policy packs, structured decisions) to the router th
 **already exists**, without a second router and without weakening insurance
 compliance.
 
-> Status: design for review. No implementation until approved. This document is
-> grounded in the router's **observable** contract (its log schema, routing
-> aliases, provider set, SHIELD tables, Railway config). Some internals need the
-> `Sonnyheat/sunny-model-router` source to finalize — flagged as **[needs source]**.
+> Status: **finalized against `sfgnews-ai` — awaiting Jeff's approval. No
+> implementation or deployment until approved.** This document is grounded in
+> (a) the router's **observable** contract (log schema, routing aliases, provider
+> set, SHIELD tables, Railway config) and (b) the **actual `sfgnews-ai` code in
+> this repo** (the `sfg_news` publish target — see §1a). The §8 latency-vs-SHIELD
+> invariant is confirmed (2026-07-26). Router-*internal* items still need the
+> `Sonnyheat/sunny-model-router` source and stay flagged **[needs source]**;
+> that repo is **not** in this session's scope, so those cannot be closed here.
 
 ---
 
@@ -30,6 +34,35 @@ compliance.
 **Conclusion:** provider-independence, multi-provider, multi-app identity
 (`source_system`), fallback (`fallback_safe`), cost/latency logging, SHIELD, and
 human-hold already exist. Phase 2 is **additive**, not a rebuild.
+
+## 1a. What the `sfg_news` side actually is (this repo — grounded)
+
+Verified directly against `sfgnews-ai` source (not inferred). This is the
+`sfg_news` **publish target**, and it constrains the `sfg_news` policy pack below.
+
+| Element | Reality in this repo |
+|---|---|
+| App | Read-only **React/Vite/TS** public news reader. No AI, no generation, no writes — it renders already-published content. |
+| Data | Supabase table **`signal_articles`** (project ref `pysqnsjvbqfwiarhrejo`), read via the **anon key** (`src/lib/supabase.ts`, `src/hooks/useArticles.ts`). |
+| Columns | `id, headline, slug, pillar, author, date_published, content_en, publish_status, persona_target, signal_event_type` (`src/types/index.ts`). |
+| Publish gate | Every query filters **`publish_status = 'published'`** — content is invisible to the public until then. This column **is** the "editorial approval / publishing safeguard." |
+| Pillars | `final-expense`, `mortgage-protection`, `debt-action-plan`, `news` — the sfg_news topic taxonomy. |
+| Classification fields | `persona_target`, `signal_event_type` already exist — usable as deterministic classifier / policy-key inputs. |
+| Localization | `content_en` + `/en/...` routes ⇒ per-locale content model. Each localized variant is a **separate publishable artifact needing its own compliance pass**. |
+| Compliance surface | `ArticlePage.tsx` hard-codes "Licensed Insurance Agent — FL License W725473 · Sunny Financial Group" on every article. Even the *News* site publishes under a licensed-agent identity. |
+
+**Two finalization consequences:**
+
+1. **The insurance-compliance floor applies to `sfg_news` too.** The license
+   footer on every article is code-level proof that news content is published
+   under regulated insurance identity — so §5's "insurance rules are global
+   mandatory, editorial rules are application-scoped" is grounded in code, not
+   just policy preference.
+2. **No router lands in this repo.** There is no AI code here to extend; the
+   `sfg_news` integration point is purely the `signal_articles.publish_status`
+   lifecycle. The router/generation lives in `sunny-model-router` (+ REBUILD
+   edge functions / n8n per the module README). §9's component map targets that
+   repo, confirming the reference module must **not** be wired into this app.
 
 ## 2. Gap analysis (spec → what's missing)
 
@@ -97,7 +130,27 @@ Two policy packs over the same engine (neither weakens the other):
 
 **Hard rule:** SFG News editorial policy may relax *tone/length/formatting*, never
 the SFG **insurance-compliance** floor. Enforced by making insurance rules global
-mandatory, editorial rules application-scoped.
+mandatory, editorial rules application-scoped. Grounded in code: every article
+renders under FL License W725473 (§1a), so the floor is not optional for news.
+
+**Grounded mapping to `signal_articles` (this repo):**
+
+- **Editorial approval / publishing safeguard = the `publish_status` lifecycle.**
+  Phase-2 does not invent a publish queue; a `sfg_news` decision that clears
+  SHIELD + editorial review is what promotes a row to `publish_status='published'`
+  (the only state the reader renders). Recommend an explicit ladder —
+  `draft → in_review → approved → published` (plus `held`/`rejected`) — with the
+  transition to `published` gated on the SHIELD PASS + human editorial approval
+  the design already requires. **[needs source: current allowed `publish_status`
+  values + who writes them]**
+- **Policy key inputs already exist.** `pillar` (topic), `persona_target`, and
+  `signal_event_type` are real columns — the deterministic classifier and the
+  `routing_policies` key `(application, agent, taskType)` can be derived from
+  them for `sfg_news` without new fields.
+- **Per-locale compliance.** `content_en` is one localized artifact; any future
+  `content_<locale>` is a **separate** publishable unit and gets its **own**
+  SHIELD/editorial pass before its own publish flag flips. A passed English
+  variant never authorizes release of a translation.
 
 ## 6. Dual-model comparison (L3+)
 
@@ -122,7 +175,12 @@ Reuse existing; add only what's missing.
 
 No customer insurance data is combined with news workflows — those stay in their
 per-app Supabase projects; only routing/telemetry/compliance metadata lives in the
-shared hub, matching today's layout.
+shared hub, matching today's layout. Concretely: the `sfg_news` content and its
+**`publish_status`** stay in the sfg_news Supabase project (`signal_articles`,
+project ref `pysqnsjvbqfwiarhrejo`); the shared Holdings hub stores only the
+`decision_records` / `model_router_logs` row and the SHIELD outcome that
+*authorizes* the flag flip. The router never reaches across into another app's
+content tables — it emits a decision; the owning app applies it.
 
 ## 8. Latency priority ("prosper/speed outweighs")
 
@@ -216,9 +274,32 @@ comparison + single final response — it is not new behavior, it's consolidatio
 the deterministic pre-classifier (if any), the alias-selection logic, retry/
 breaker/timeout internals, and how `requires_human_review`/`escalation` are set.
 
-## 11. To finalize this design I need
+## 11. Finalization status
 
-- Read access to **`Sonnyheat/sunny-model-router`** (resolves every **[needs source]**:
-  current classifier, alias→model map, SHIELD call shape, fallback/breaker logic).
-- Confirmation on the §8 latency-vs-SHIELD question.
+**Resolved in this pass (grounded against `sfgnews-ai` code):**
+
+- ✅ §8 latency-vs-SHIELD invariant — **confirmed** by Jeff (2026-07-26); locked.
+- ✅ `sfg_news` side grounded against real code (§1a): it is a read-only reader
+  over `signal_articles`; the publish gate is `publish_status`; the insurance
+  floor provably applies (license footer); no router lands in this repo.
+- ✅ §5 editorial/publishing mapped to the real `publish_status` lifecycle and
+  existing `pillar` / `persona_target` / `signal_event_type` columns.
+- ✅ §7 app-vs-hub data separation made concrete for `sfg_news`.
+
+**Still open — needs Jeff:**
+
 - Approval of the reuse-and-extend data model (§7) before any migration.
+- Confirmation of the proposed `publish_status` ladder and who may write it (§5).
+
+**Still blocked on repo access — cannot be closed in this session** (scope is
+`Sonnyheat/sfgnews-ai` only; `Sonnyheat/sunny-model-router` is not attached):
+
+- Router **[needs source]** items: the deterministic pre-classifier, alias→model
+  selection logic, retry/breaker/timeout internals, exact SHIELD (n8n) call
+  shape, and how `requires_human_review` / `escalation` are currently set.
+- Grant read access to `Sonnyheat/sunny-model-router` (or add it to a session)
+  to close the remaining **[needs source]** flags.
+
+**Not started (correctly) — awaiting approval:** no implementation, no migration,
+no deploy, and the reference module in this folder stays reference-only and is
+**not** wired into the app.
