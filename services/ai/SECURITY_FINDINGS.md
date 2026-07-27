@@ -10,7 +10,26 @@ Nothing here is mass-applied to production — remediation SQL is staged for you
 | Holdings `gukpllhyjatgiuyurdzq` | `shield_prompts` | RLS **off** + anon full write grants — anyone with the anon key could rewrite SHIELD compliance rules | RLS **on**, anon/authenticated write grants revoked, service-role intact, 5 rows still readable |
 | REBUILD `bpzevykybcvotcbfsvvc` | `_ghl_probe` | RLS **off** + anon full write grants (scratch table) | RLS **on**, anon/authenticated grants revoked |
 
-## Latent risk (NOT yet remediated — needs your ok)
+## Applied 2026-07-26 (approved)
+
+- **Revoked `anon` INSERT/UPDATE/DELETE/TRUNCATE** on every public table in
+  **Holdings** and **SFGNews**. Verified: **0 anon-writable tables remain** in
+  both; anon SELECT left intact (49 Holdings / 15 SFGNews) so public reads still
+  work; `authenticated` grants untouched (a few tables use authenticated policies).
+  Pre-checked first — no table had a write policy that legitimately admits anon,
+  so this is a no-op for real traffic and only removes the latent exposure.
+- **Revoked `anon`/`authenticated` SELECT on `system_tokens`** (SFGNews) — a
+  key/value secret store (`key, value, updated_at`). It was already protected
+  (RLS on, no policy) but had an inert anon SELECT grant; removed so a future
+  RLS toggle-off can't leak the token. service_role unaffected.
+- **Still outstanding:** apply the same anon-write revoke to **REBUILD** and the
+  other projects (Atlas / LEDGER / DOM / Links / 10of10 / REEL) — not yet done.
+- **Noted misconfig:** Holdings `reel_nlp_calibration` has a policy named
+  "Service role full access" that is actually `roles={public}` with `using=true`
+  (would admit any role). Anon can no longer reach it (grant revoked), but the
+  policy should be rewritten to `auth.role() = 'service_role'` to match its name.
+
+## Latent risk (original finding — now remediated on the two hubs above)
 
 Dozens of tables in **Holdings** and **SFGNews** carry broad **`anon` INSERT/UPDATE/
 DELETE/TRUNCATE grants**. These are **currently inert** because RLS is enabled and
