@@ -12,9 +12,10 @@ compliance.
 > this repo** (the `sfg_news` publish target — see §1a). The §8 latency-vs-SHIELD
 > invariant is confirmed (2026-07-26). **Router internals are now grounded too**
 > — `Sonnyheat/sunny-model-router` was read directly (§10b), closing every
-> **[needs source]** flag. Jeff chose **cross-provider** (OpenAI reviewer, L3/L4;
-> §11), and the engine is now **BUILT and staged** on branch
-> `sunny-model-router@claude/phase2-decision-engine` — additive, tested (26/26),
+> **[needs source]** flag. **Setup (Jeff, 2026-07-27): OpenAI is a failover
+> backup only; the dual-model second opinion is a second independent Claude pass**
+> (§11). The engine is **BUILT and staged** on branch
+> `sunny-model-router@claude/phase2-decision-engine` — additive, tested (27/27),
 > **not deployed** (see §12). Awaiting approval to migrate + enable a rollout.
 
 ---
@@ -157,10 +158,11 @@ renders under FL License W725473 (§1a), so the floor is not optional for news.
 
 ## 6. Dual-model comparison (L3+)
 
-> ⚠️ The "Claude **and OpenAI**" wording below predates the 2026-07-26
-> single-provider consolidation — see the blocking tension in §10b, decision
-> pending in §11. If Jeff picks single-provider (option 2), read "OpenAI" here as
-> "a second, independently-prompted Claude reviewer."
+> ✅ **RESOLVED (Jeff, 2026-07-27): same-vendor dual-Claude.** The "second model"
+> is a **second independent Claude pass** (a separately-prompted drafter +
+> reviewer/critic), compared deterministically — **not** OpenAI. OpenAI is a
+> failover backup only (§11). So below, read "OpenAI" as "a second, independently
+> prompted Claude pass." The independence is prompt/role-level, not vendor-level.
 
 Run Claude and OpenAI **independently** (neither sees the other's draft), then a
 deterministic comparison (reference: `comparison/compare.ts`) → agreement status,
@@ -355,17 +357,24 @@ classifier is the deterministic `choose_alias` (no LLM classify), breakers/cost
 caps/loop caps are net-new, SHIELD is external n8n (not called in-router), and the
 contract is snake_case with no `application`/`DecisionOutput`.
 
-**DECISION (Jeff, 2026-07-26): Option 1 — cross-provider.** OpenAI returns as an
-**L3/L4 reviewer only** (drafting stays Claude). This is an **explicit override**,
-by Jeff, of the 2026-07-26 single-provider consolidation and the router repo's
-"Claude only" stack note — scoped to the review/comparison leg, not a broad
-re-add of OpenAI to agent-facing aliases. Recorded so the two documents agree:
-the stack doc should be updated to permit OpenAI as a compliance/second-opinion
-*reviewer*. Drafting/L1/L2-primary remain `claude-sonnet-5`.
+**DECISION (Jeff, 2026-07-27, supersedes the 2026-07-26 cross-provider choice):
+OpenAI is a FAILOVER BACKUP ONLY.** OpenAI is **not** a reviewer. It fires only
+when Claude errors/is down, via LiteLLM `fallbacks` (`fallback_safe` /
+`cheap_fallback` → OpenAI); every production alias's fallback chain reaches it.
+Normal responses stay 100% Claude (`claude-sonnet-5`). This **stays consistent
+with the "Claude only for agent intelligence" rule** — a failover is outage
+insurance, not the primary brain — so no stack-rule override is needed.
 
-Build consequence: add an OpenAI-backed **reviewer** deployment used only by the
-decision engine's review/parallel legs; `choose_alias` and all Phase-1 agent
-routing stay Claude-only and byte-for-byte unchanged.
+The multi-model **second opinion / dual-analysis** (§6) is a **second independent
+Claude pass**, not OpenAI. What actually protects compliance is the deterministic
+classifier floor + SHIELD + the Level-4 human hold — all provider-agnostic and
+kept. Rationale: the firm consolidated to Claude on quality/cost grounds
+(2026-07-26); an always-on cross-vendor reviewer would re-add cost/latency and a
+model that tested weaker, and mostly just enlarge the human-review queue.
+
+Build consequence: no OpenAI agent-facing alias; `default_reviewer=anthropic`;
+the engine keys decisions by role so a same-vendor two-pass doesn't collide;
+OpenAI stays in the registry only so policy can fail a role over to it.
 
 **Also needs Jeff (unchanged):** approval of the §7 data-model migration, and the
 `publish_status` ladder + writer for `sfg_news` (§5).
@@ -390,11 +399,14 @@ only: the Phase-1 `/ai-router` path is byte-for-byte unchanged.
   deterministic comparison, `DecisionOutput` validation with safe recovery,
   cost + hard call/loop caps, circuit breakers, `RuleBasedShield` fallback,
   redacted audit row.
-- **Cross-provider reviewer (Jeff's decision)** — new `decision_reviewer` alias
-  (`openai/gpt-4.1`) in `litellm_config.yaml`, kept in sync with
-  `VALID_ALIASES`, **no fallback** so a reviewer outage degrades to single-model
-  + escalation rather than silently reviewing with Claude. Drafting/agent
-  routing stay Claude-only.
+- **OpenAI = failover backup only (Jeff, 2026-07-27)** — `fallback_safe` →
+  `openai/gpt-4.1` and `cheap_fallback` → `openai/gpt-4o-mini` in
+  `litellm_config.yaml`; every production alias's fallback chain reaches
+  `fallback_safe`, so all aliases fail over to OpenAI **only when Claude errors**.
+  Normal output stays 100% Claude. The earlier `decision_reviewer` alias was
+  removed. The engine's dual-analysis leg is a **second independent Claude pass**
+  (`default_reviewer=anthropic`; decisions keyed by role so two Claude passes
+  don't collide). OpenAI stays in the registry only for policy failover.
 - **Opt-in endpoints** — `POST /ai-decision` and `GET /health/phase2`, gated by
   `PHASE2_ENABLED_APPS`. An app not in that set makes **no** model call and
   points callers back to `/ai-router` (the safe "flag off" state).
@@ -415,8 +427,8 @@ only: the Phase-1 `/ai-router` path is byte-for-byte unchanged.
   queue).
 - Wire `phase2/shield.py` to the real SHIELD **n8n** workflow (today it uses the
   deterministic `RuleBasedShield` floor).
-- Provision `OPENAI_API_KEY` for the reviewer; set `PHASE2_ENABLED_APPS` to begin
-  the §10 staged rollout (SFG L1–L2 first).
+- Provision `OPENAI_API_KEY` for the **failover** path; set `PHASE2_ENABLED_APPS`
+  to begin the §10 staged rollout (SFG L1–L2 first).
 - The `sfg_news` `publish_status` ladder + writer (§5) — still pending Jeff.
 
 **Nothing is deployed.** Rollback remains trivial: agents stay on `/ai-router`;
