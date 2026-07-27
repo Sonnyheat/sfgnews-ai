@@ -77,17 +77,20 @@ export const DEFAULT_CONFIG: RouterConfig = {
   defaultReviewer: 'openai',
 
   models: {
+    // Model IDs confirmed against the live Sunny Model Router (Jeff, 2026-07-26):
+    // "new router is Claude Sonnet 5 and OpenAI". Cost figures are placeholders —
+    // set to real per-1M pricing before relying on cost ceilings.
     anthropic: {
       provider: 'anthropic',
-      model: 'claude-sonnet-4-5', // primary conversational model
+      model: 'claude-sonnet-5', // primary conversational / long-form (content_draft)
       inputPer1M: 3,
       outputPer1M: 15,
     },
     openai: {
       provider: 'openai',
-      model: 'gpt-4.1', // structured reasoning / second opinion
-      inputPer1M: 2,
-      outputPer1M: 8,
+      model: 'gpt-4o', // structured reasoning / review / second opinion
+      inputPer1M: 2.5,
+      outputPer1M: 10,
     },
   },
 
