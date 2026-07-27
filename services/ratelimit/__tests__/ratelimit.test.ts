@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { RateLimiter } from '../limiter.ts'
-import { InMemoryStore, createPostgresStore } from '../store.ts'
+import { InMemoryStore, createPostgresStore, createRebuildRateLimitsStore } from '../store.ts'
 import { extractClientIp, enforceRateLimit } from '../http.ts'
 import type { RateLimitStore } from '../types.ts'
 
@@ -90,6 +90,26 @@ test('enforceRateLimit returns null when allowed, 429 when blocked', async () =>
   assert.equal(blocked!.status, 429)
   assert.ok(blocked!.headers.get('Retry-After'))
   assert.equal(blocked!.headers.get('X-RateLimit-Limit'), '1')
+})
+
+test('rebuild store maps key -> (identifier, action) against existing rate_limits', async () => {
+  const rows: Array<{ identifier: string; action: string }> = []
+  const counts = new Map<string, number>()
+  const store = createRebuildRateLimitsStore(async (sql, params) => {
+    assert.match(sql, /public\.rate_limits/)
+    assert.match(sql, /on conflict \(identifier, action, window_start\)/)
+    const [identifier, action, windowStartMs] = params as [string, string, number]
+    rows.push({ identifier, action })
+    const k = `${identifier}|${action}|${windowStartMs}`
+    const n = (counts.get(k) ?? 0) + 1
+    counts.set(k, n)
+    return [{ count: n }]
+  })
+  const c = clock()
+  const rl = new RateLimiter(store, { windowMs: 60_000, max: 1, keyPrefix: 'realtime-chat' }, c.now)
+  assert.equal((await rl.check('203.0.113.7')).allowed, true)
+  assert.equal((await rl.check('203.0.113.7')).allowed, false)
+  assert.deepEqual(rows[0], { identifier: '203.0.113.7', action: 'realtime-chat' })
 })
 
 test('postgres store increments atomically via injected exec', async () => {

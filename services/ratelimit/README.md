@@ -55,10 +55,17 @@ if (limited) return limited   // 429 + Retry-After, v66 body never touched
   single instance / tests only.
 - **Shared store, many gates** via `keyPrefix`.
 
-## Store
+## Store — two options
 
-`schema.sql` defines `public.rate_limits` (RLS on, service-role only). REBUILD
-already has a `rate_limits` table (0 rows) — adapt to it if the columns match.
+- **Reuse REBUILD's existing `public.rate_limits`** (recommended):
+  `createRebuildRateLimitsStore(exec)`. Its live schema is
+  `identifier, action, count, window_start` — the limiter key `"<action>:<ip>"`
+  splits cleanly into `action`/`identifier`. Needs a one-line unique constraint on
+  `(identifier, action, window_start)` for the atomic upsert (see `schema.sql`).
+- **Standalone table** `public.rate_limit_counters`: `createPostgresStore(exec)`.
+  Use only if you'd rather not touch the shared `rate_limits` table.
+
+Both are RLS-on / service-role-only. `InMemoryStore` is single-instance/tests.
 
 ## Tests
 

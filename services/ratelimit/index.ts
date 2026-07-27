@@ -17,7 +17,11 @@
 // Node / Vercel usage is identical with the Web Request/Response types.
 
 export { RateLimiter } from './limiter.ts'
-export { InMemoryStore, createPostgresStore } from './store.ts'
+export {
+  InMemoryStore,
+  createPostgresStore,
+  createRebuildRateLimitsStore,
+} from './store.ts'
 export type { SqlExec } from './store.ts'
 export { extractClientIp, enforceRateLimit, rateLimitHeaders } from './http.ts'
 export type {

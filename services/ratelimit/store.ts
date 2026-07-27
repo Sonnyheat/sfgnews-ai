@@ -53,7 +53,9 @@ export type SqlExec = (
  * SQL with the SERVICE ROLE (never the anon key). The upsert is atomic per row,
  * so concurrent requests increment the same window safely.
  *
- * Requires the table in schema.sql (rate_limits: bucket_key, window_start, count).
+ * Requires the standalone table in schema.sql (bucket_key, window_start, count).
+ * If you want to reuse REBUILD's EXISTING rate_limits table instead, use
+ * createRebuildRateLimitsStore below.
  */
 export function createPostgresStore(exec: SqlExec): RateLimitStore {
   return {
@@ -69,6 +71,43 @@ export function createPostgresStore(exec: SqlExec): RateLimitStore {
          do update set count = public.rate_limits.count + 1
          returning count`,
         [key, windowStartMs, windowMs],
+      )
+      const count = rows?.[0]?.count
+      if (typeof count !== 'number') {
+        throw new Error('rate_limits: unexpected increment result')
+      }
+      return count
+    },
+  }
+}
+
+/**
+ * Store backed by REBUILD's EXISTING `public.rate_limits` table
+ * (columns: identifier, action, window_start, count). The limiter key arrives as
+ * "<action>:<identifier>" (keyPrefix ':' clientIp), which we split so the row is
+ * keyed the same way the existing table is designed for.
+ *
+ * REQUIRES a unique constraint on (identifier, action, window_start) for the
+ * atomic upsert — see schema.sql (add_unique_rate_limits). Until that exists the
+ * ON CONFLICT target is invalid, so apply that migration before wiring this in.
+ */
+export function createRebuildRateLimitsStore(exec: SqlExec): RateLimitStore {
+  return {
+    async increment(
+      key: string,
+      windowStartMs: number,
+      _windowMs: number,
+    ): Promise<number> {
+      const sep = key.indexOf(':')
+      const action = sep === -1 ? 'default' : key.slice(0, sep)
+      const identifier = sep === -1 ? key : key.slice(sep + 1)
+      const rows = await exec(
+        `insert into public.rate_limits (identifier, action, window_start, count)
+         values ($1, $2, to_timestamp($3 / 1000.0), 1)
+         on conflict (identifier, action, window_start)
+         do update set count = public.rate_limits.count + 1
+         returning count`,
+        [identifier, action, windowStartMs],
       )
       const count = rows?.[0]?.count
       if (typeof count !== 'number') {
