@@ -22,8 +22,21 @@ Nothing here is mass-applied to production — remediation SQL is staged for you
   key/value secret store (`key, value, updated_at`). It was already protected
   (RLS on, no policy) but had an inert anon SELECT grant; removed so a future
   RLS toggle-off can't leak the token. service_role unaffected.
-- **Still outstanding:** apply the same anon-write revoke to **REBUILD** and the
-  other projects (Atlas / LEDGER / DOM / Links / 10of10 / REEL) — not yet done.
+- **REBUILD `bpzevykybcvotcbfsvvc` (done):** of 174 anon-writable tables, revoked
+  anon writes on **163**, keeping the **11** that legitimately accept anon writes
+  from the browser (verified permissive anon INSERT policies): `alex_sessions,
+  analytics_events, appointments, blog_analytics, calculator_sessions,
+  conversion_events, geo_leads, listening_events, recruit_training_records,
+  user_signals, visitor_profiles`. Verified 11 remain. Good news from the audit:
+  the sensitive tables (`leads`, `agent_credentials`, `alex_tokens`, `user_roles`,
+  `compliance_*`, `ghl_calendars`, `lead_profiles`, `advisor_transfer_queue`)
+  already had explicit `Deny anon ... USING false` policies — RLS was well-built;
+  the broad grants were the only gap, now closed.
+  - Follow-up (optional): the 11 kept tables only need anon INSERT; consider
+    revoking anon UPDATE/DELETE/TRUNCATE on them too (left intact for now to avoid
+    breaking any upsert flows).
+- **Still outstanding:** apply the same careful pass to the remaining projects
+  (Atlas / LEDGER / DOM / Links / 10of10 / REEL) — not yet done.
 - **Noted misconfig:** Holdings `reel_nlp_calibration` has a policy named
   "Service role full access" that is actually `roles={public}` with `using=true`
   (would admit any role). Anon can no longer reach it (grant revoked), but the
