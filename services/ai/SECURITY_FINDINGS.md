@@ -35,8 +35,37 @@ Nothing here is mass-applied to production — remediation SQL is staged for you
   - Follow-up (optional): the 11 kept tables only need anon INSERT; consider
     revoking anon UPDATE/DELETE/TRUNCATE on them too (left intact for now to avoid
     breaking any upsert flows).
-- **Still outstanding:** apply the same careful pass to the remaining projects
-  (Atlas / LEDGER / DOM / Links / 10of10 / REEL) — not yet done.
+- **Remaining projects swept (2026-07-26):**
+  - **Links** — revoked anon writes on all 6 anon-writable tables (no legit anon path).
+  - **Atlas** — revoked anon writes on the 42 non-telemetry tables; kept 3
+    INSERT-only telemetry (`ai_ensemble_results`, `market_intelligence`,
+    `security_events`).
+  - **10of10** — revoked the non-telemetry table; kept 6 INSERT-only telemetry
+    (`analytics_events`, `conversion_funnel`, `daily_metrics`, `subscribers`,
+    `territories`, `voice_chat_sessions`).
+  - **DOM** — revoked anon writes on the 16 non-flagged tables; `gsc_data` left
+    pending (wide-open `ALL/public/true` — see below).
+  - **REEL** — revoked anon writes on the 12 non-flagged tables; 5 `reel_*`
+    content tables left pending (wide-open `ALL/anon/true` — see below).
+
+## 🔴 CRITICAL — needs a decision (not auto-remediated)
+
+Some projects have **wide-open `ALL … USING true / WITH CHECK true`** policies for
+anon/public — full read + write + delete via the public anon key:
+
+- **LEDGER `xlyqnwlhxuqjfyewizwr` — financial data fully exposed.** All 8 tables
+  (`transactions`, `commissions`, `chargebacks`, `tax_estimates`,
+  `bank_statement_uploads`, `chart_of_accounts`, `vendor_rules`, `mileage_log`)
+  are anon `ALL/true`. Diagnostic: **0 restricted policies, 0 auth users** — the
+  app has NO authentication and relies entirely on the anon key. Revoking anon
+  would take it offline; the real fix is adding Supabase Auth or a service-role
+  backend. **Left untouched pending your decision.**
+- **DOM `giggixjpjcodvigvkekc`** — `gsc_data` is anon `ALL/true`.
+- **REEL `lszjzhpytiqtklrokzpz`** — `reel_clips/published/review_queue/sync_log/videos`
+  are anon `ALL/true`.
+
+These are architectural (auth model) fixes, not grant tweaks — do not blanket-
+revoke without confirming each app authenticates users or moves to service-role.
 - **Noted misconfig:** Holdings `reel_nlp_calibration` has a policy named
   "Service role full access" that is actually `roles={public}` with `using=true`
   (would admit any role). Anon can no longer reach it (grant revoked), but the
