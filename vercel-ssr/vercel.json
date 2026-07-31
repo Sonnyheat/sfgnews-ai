@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    {
+      "source": "/en/:pillar/:slug",
+      "destination": "/api/article/:pillar/:slug"
+    },
+    {
+      "source": "/en/:pillar",
+      "destination": "/api/article/:pillar"
+    }
+  ]
+}
